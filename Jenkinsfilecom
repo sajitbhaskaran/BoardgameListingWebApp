@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'maven3'
+        jdk 'jdk17'
+    }
+
+    environment {
+        SCANNER_HOME= tool 'sonar-scanner'
+    }
+    
+    stages {
+
+        stage('Git checkout') {
+            steps {
+                git 'https://github.com/jaiswaladi2468/BoardgameListingWebApp.git'
+            }
+        }
+
+        stage('Trivy FS') {
+            steps {
+                sh 'trivy fs --format table -o trivy-report.html .'
+            }
+        }
+
+        stage('Unit Test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage('Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: '--scan . --format XML', odcInstallation: 'DC'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+
+        stage('SonarQube Scan') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh '''$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=Boardgame -Dsonar.projectName=Boardgame \
+                    -Dsonar.java.binaries=target/classes '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    waitForQualityGate abortPipeline: false, credentialsId: 'sonar-token'
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn package'
+            }
+        }
+
+    }
+}
